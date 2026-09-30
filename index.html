@@ -168,6 +168,7 @@ select{font:inherit;color:var(--ink);background:var(--paper);border:1px solid va
 .switch{appearance:none;-webkit-appearance:none;width:48px;height:28px;border-radius:99px;background:var(--line);position:relative;flex:none;transition:background .2s;cursor:pointer}
 .switch::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .2s}
 .switch:checked{background:var(--indigo)} .switch:checked::after{transform:translateX(20px)}
+.pill{padding:8px 14px;border-radius:99px;border:1px solid var(--line);background:var(--paper);color:var(--indigo);font-weight:700;font-size:.9rem;flex:none}
 .danger{color:var(--beni);font-weight:700;padding:14px 16px;width:100%;text-align:left}
 /* Phrases and long custom cards */
 .phrase{font-family:var(--mincho);font-weight:600;font-size:clamp(1.4rem,10cqw,2.3rem);line-height:1.35;text-align:center;padding:0 4px;color:var(--ink)}
@@ -684,10 +685,16 @@ function renderProgress(){const all=Object.values(S.cards);const learned=all.len
         <select id="npd">${[5,10,15,20,30].map(n=>`<option${n===S.settings.newPerDay?' selected':''}>${n}</option>`).join('')}</select></div>
       <div class="row"><label for="rev">Reverse cards<small>Show the meaning first, recall the Japanese</small></label>
         <input type="checkbox" class="switch" id="rev"${S.settings.reverse?' checked':''}></div>
+      <div class="row"><label>Back up progress<small>${S.lastBackup?`Last backup ${new Date(S.lastBackup).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`:'Save everything to a file'}</small></label><button class="pill" id="bk">Back up</button></div>
+      <div class="row"><label for="rs">Restore from backup<small>Replaces what's on this device</small></label><button class="pill" id="rsb">Restore</button><input type="file" id="rs" accept=".json,application/json" hidden></div>
+      <p class="msg" id="bkmsg" role="status" style="padding:0 16px"></p>
       <div class="row" style="padding:0"><button class="danger" id="reset">Reset all progress</button></div>
     </div></div>`;
   $('#npd').addEventListener('change',e=>{S.settings.newPerDay=+e.target.value;save()});
   $('#rev').addEventListener('change',e=>{S.settings.reverse=e.target.checked;save()});
+  $('#bk').addEventListener('click',backup);
+  $('#rsb').addEventListener('click',()=>$('#rs').click());
+  $('#rs').addEventListener('change',e=>{const f=e.target.files[0];if(f)restore(f);e.target.value=''});
   $('#reset').addEventListener('click',()=>{if(confirm('Reset all progress? Your review history and learned cards will be erased.')){S=defaults();save();renderProgress()}})}
 
 /* ---------- Kanji detail sheet ---------- */
@@ -796,6 +803,25 @@ function renderMine(msg,ok){const list=S.custom||[];
     if(!x||!confirm(`Delete ${x.front}? Its review progress will be removed too.`))return;
     S.custom=S.custom.filter(y=>y.id!==x.id);delete S.cards[x.id];delete BYID[x.id];rebuildMine();save();renderMine(`Deleted ${esc(x.front)}.`,true)}))}
 function renderMineMsg(t){const p=view.querySelector('.msg');p.className='msg err';p.innerHTML=t}
+
+/* ---------- Backup and restore ---------- */
+function bkMsg(t,ok){const p=$('#bkmsg');if(p){p.className='msg '+(ok?'ok':'err');p.textContent=t}}
+async function backup(){S.lastBackup=Date.now();save();
+  const data=JSON.stringify({app:'sumi',version:1,saved:new Date().toISOString(),state:S});
+  const name=`sumi-backup-${dayKey()}.json`;
+  const file=new File([data],name,{type:'application/json'});
+  try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'Sumi backup'});renderProgress();bkMsg('Backup ready. Save it to Files or iCloud Drive.',true);return}}
+  catch(e){if(e.name==='AbortError'){bkMsg('Backup cancelled.');return}}
+  const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);renderProgress();bkMsg('Backup saved to your downloads.',true)}
+function restore(f){const r=new FileReader();
+  r.onload=()=>{let o;try{o=JSON.parse(r.result)}catch(e){return bkMsg("That file isn't a Sumi backup.")}
+    if(!o||o.app!=='sumi'||!o.state||typeof o.state.cards!=='object')return bkMsg("That file isn't a Sumi backup.");
+    const n=Object.keys(o.state.cards).length;
+    if(!confirm(`Restore this backup from ${new Date(o.saved).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}? It has ${n} learned card${n===1?"":"s"} and will replace the progress on this device.`))return;
+    S=Object.assign(defaults(),o.state);S.settings=Object.assign(defaults().settings,S.settings);
+    rebuildMine();refreshFont();save();renderProgress();bkMsg(`Restored ${n} learned card${n===1?"":"s"}.`,true)};
+  r.onerror=()=>bkMsg("Couldn't read that file.");r.readAsText(f)}
 
 render();
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))}

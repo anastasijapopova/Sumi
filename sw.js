@@ -1,5 +1,5 @@
 // Sumi offline support: keeps the app and its fonts available without internet
-const CACHE = 'sumi-v1';
+const CACHE = 'sumi-v2';
 const CORE = ['./', 'index.html', 'manifest.json', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
